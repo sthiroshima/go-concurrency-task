@@ -16,6 +16,7 @@ type TaskManager struct {
 	repo      *repository.TaskStateRepository
 	queue     chan TaskCtx
 	result    chan TaskResult
+	attempts  map[uuid.UUID]int
 	CancelCtx map[uuid.UUID]context.CancelFunc
 	rwmu      sync.RWMutex
 	wg        sync.WaitGroup
@@ -36,6 +37,7 @@ func NewTaskManager(appCtx context.Context, repo *repository.TaskStateRepository
 		appCtx:    appCtx,
 		repo:      repo,
 		queue:     make(chan TaskCtx, 100),
+		attempts:  make(map[uuid.UUID]int),
 		result:    make(chan TaskResult, 100),
 		CancelCtx: make(map[uuid.UUID]context.CancelFunc),
 	}
@@ -90,9 +92,15 @@ write:
 
 func (m *TaskManager) resultCollector(ctx context.Context) {
 	defer m.wg.Done()
+
 	for {
 		select {
 		case res := <-m.result:
+			if m.addAttempt(res.ID) {
+				m.AdToQueue(res.ID)
+				continue
+			}
+
 			m.saveResult(ctx, res)
 		case <-ctx.Done():
 			return
@@ -113,6 +121,29 @@ func (m *TaskManager) saveResult(ctx context.Context, res TaskResult) {
 			return
 		}
 	}
+}
+
+func (m *TaskManager) retryTask(ID uuid.UUID) bool {
+	if m.addAttempt(ID) {
+		m.AdToQueue(ID)
+		return true
+	}
+
+	return false
+}
+
+func (m *TaskManager) addAttempt(ID uuid.UUID) bool {
+	m.rwmu.Lock()
+	defer m.rwmu.Unlock()
+
+	if m.attempts[ID] >= 2 {
+		delete(m.attempts, ID)
+		return false
+
+	}
+
+	m.attempts[ID]++
+	return true
 }
 
 func (m *TaskManager) AdToQueue(ID uuid.UUID) {
