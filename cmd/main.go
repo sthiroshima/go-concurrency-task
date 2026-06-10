@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"go-concurrency-task/internal/repository"
+	"go-concurrency-task/internal/service"
 	"go-concurrency-task/internal/transport"
 	"go-concurrency-task/internal/transport/handlers"
+	"go-concurrency-task/internal/workers"
 	"log"
 	"net/http"
 	"os/signal"
@@ -11,24 +14,27 @@ import (
 )
 
 func main() {
-
-	ctx, stop := signal.NotifyContext(
+	ctx, cancel := signal.NotifyContext(
 		context.Background(),
-		syscall.SIGTERM,
 		syscall.SIGINT,
+		syscall.SIGTERM,
 	)
-	defer stop()
+	defer cancel()
 
-	taskHandler := handlers.NewTaskHandler()
+	repo := repository.NewTaskStateRepository()
+	queue := workers.NewTaskManager(ctx, repo)
+	taskService := service.NewTaskService(repo, queue)
+	handler := handlers.NewTaskHandler(taskService)
 
 	server := http.Server{
-		Addr:    ":8080",
-		Handler: transport.NewRouter(taskHandler),
+		Addr:    ":8050",
+		Handler: transport.NewRouter(handler),
 	}
-
 	s := transport.App{
 		Server: &server,
 	}
+
+	go queue.Run(ctx)
 
 	if err := s.Run(ctx); err != nil {
 		log.Fatal(err)
