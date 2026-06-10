@@ -1,0 +1,4 @@
+github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
+github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+github.com/sthiroshima/go-quicksort-goroutine v0.0.0-20260530181416-a6ad987dbfdd h1:ySz3CIFKpoTzdyDhicfgKzOX2yxJH+IpUTl5FWHGzRs=
+github.com/sthiroshima/go-quicksort-goroutine v0.0.0-20260530181416-a6ad987dbfdd/go.mod h1:VPEFgeu7sCVsyy84ap3nacsr7OdiaHZR1uut/jdve4I=
