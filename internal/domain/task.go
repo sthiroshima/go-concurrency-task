@@ -1,15 +1,19 @@
 package domain
 
-const (
-	StatusQueued     = "queued"
-	StatusProcessing = "processing"
-	StatusDone       = "done"
-	StatusFailed     = "failed"
-	StatusCanceled   = "canceled"
+import (
+	"github.com/google/uuid"
 )
 
 type Task struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Payload string `json:"payload"`
+	ID      uuid.UUID `json:"id"`
+	Type    string    `json:"type"`
+	Payload string    `json:"payload"`
+}
+
+func NewTask(ID uuid.UUID, taskType string, payload string) *Task {
+	return &Task{
+		ID:      ID,
+		Type:    taskType,
+		Payload: payload,
+	}
 }

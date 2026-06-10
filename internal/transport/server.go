@@ -10,7 +10,8 @@ type App struct {
 }
 
 func (s *App) Run(ctx context.Context) error {
-	// make run in goroutine
+	// TODO:
+	// make run in goroutine and context with <-ctx.done()
 	if err := s.Server.ListenAndServe(); err != nil {
 		return err
 	}
