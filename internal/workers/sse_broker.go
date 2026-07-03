@@ -13,16 +13,18 @@ type Client struct {
 }
 
 type Broker struct {
-	dispatcher chan string
-	rwmu       sync.RWMutex
-	wg         sync.WaitGroup
-	clients    map[uuid.UUID]*Client
+	broadcast chan string
+	closed    bool
+	mu        sync.RWMutex
+	wg        sync.WaitGroup
+	clients   map[uuid.UUID]*Client
 }
 
 func NewBroker() *Broker {
 	return &Broker{
-		dispatcher: make(chan string, 100),
-		clients:    make(map[uuid.UUID]*Client),
+		broadcast: make(chan string, 100),
+		closed:    false,
+		clients:   make(map[uuid.UUID]*Client),
 	}
 }
 
@@ -36,13 +38,28 @@ func NewClient() *Client {
 
 func (b *Broker) Run(ctx context.Context) {
 	b.wg.Add(1)
-	b.wg.Wait()
 
 	go b.worker(ctx)
 }
 
 func (b *Broker) Close() {
-	close(b.dispatcher)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if !b.closed {
+		close(b.broadcast)
+	}
+
+	b.closed = true
+
+	for UUID, client := range b.clients {
+		if !client.closed {
+			b.clients[UUID].closed = true
+			close(client.events)
+		}
+
+		delete(b.clients, UUID)
+	}
 }
 
 func (b *Broker) worker(appCtx context.Context) {
@@ -50,12 +67,12 @@ func (b *Broker) worker(appCtx context.Context) {
 
 	for {
 		select {
-		case message, ok := <-b.dispatcher:
+		case message, ok := <-b.broadcast:
 			if !ok {
 				return
 			}
 
-			b.rwmu.RLock()
+			b.mu.RLock()
 			for _, client := range b.clients {
 				if client.closed {
 					continue
@@ -66,44 +83,56 @@ func (b *Broker) worker(appCtx context.Context) {
 				default:
 				}
 			}
-			b.rwmu.RUnlock()
+			b.mu.RUnlock()
 		case <-appCtx.Done():
 			b.Close()
+			b.wg.Wait()
 
 			return
 		}
 	}
 }
 
-func (b *Broker) WriteMessage(message string) {
+func (b *Broker) WriteMessage(ctx context.Context, message string) {
+	if b.closed {
+		return
+	}
+
 	select {
-	case b.dispatcher <- message:
+	case <-ctx.Done():
+	case b.broadcast <- message:
 	default:
 	}
 }
 
-func (b *Broker) GetOrCreateClient(requestUUID uuid.UUID) (chan string, error) {
+func (b *Broker) GetOrCreateClient(requestUUID uuid.UUID) chan string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.closed {
+		return nil
+	}
+
 	c, ok := b.clients[requestUUID]
 	if !ok {
 		c = NewClient()
-
-		b.rwmu.Lock()
 		b.clients[requestUUID] = c
-		b.rwmu.Unlock()
 	}
 
-	return c.events, nil
+	return c.events
 }
 
 func (b *Broker) CloseClient(requestUUID uuid.UUID) {
-	b.rwmu.Lock()
-	defer b.rwmu.Unlock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
 	c, ok := b.clients[requestUUID]
 	if ok {
-		b.clients[requestUUID].closed = true
-		close(c.events)
-	}
+		if !c.closed {
+			c.closed = true
+			close(c.events)
+		}
 
-	delete(b.clients, requestUUID)
+		delete(b.clients, requestUUID)
+	}
 }

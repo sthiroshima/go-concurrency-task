@@ -19,7 +19,7 @@ type TaskManager struct {
 	result    chan TaskResult
 	attempts  map[uuid.UUID]int
 	CancelCtx map[uuid.UUID]context.CancelFunc
-	rwmu      sync.RWMutex
+	mu        sync.RWMutex
 	wg        sync.WaitGroup
 }
 
@@ -144,8 +144,8 @@ func (m *TaskManager) retryTask(ID uuid.UUID) bool {
 }
 
 func (m *TaskManager) addAttempt(ID uuid.UUID) bool {
-	m.rwmu.Lock()
-	defer m.rwmu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	if m.attempts[ID] >= 2 {
 		delete(m.attempts, ID)
@@ -158,8 +158,8 @@ func (m *TaskManager) addAttempt(ID uuid.UUID) bool {
 }
 
 func (m *TaskManager) AdToQueue(ID uuid.UUID) {
-	m.rwmu.Lock()
-	defer m.rwmu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(m.appCtx)
 	task := TaskCtx{
@@ -171,15 +171,15 @@ func (m *TaskManager) AdToQueue(ID uuid.UUID) {
 }
 
 func (m *TaskManager) ClearCancelCtx(id uuid.UUID) {
-	m.rwmu.Lock()
+	m.mu.Lock()
 	delete(m.CancelCtx, id)
-	m.rwmu.Unlock()
+	m.mu.Unlock()
 }
 
 func (m *TaskManager) CancelTask(ID uuid.UUID) error {
-	m.rwmu.RLock()
+	m.mu.RLock()
 	cancelFunc, ok := m.CancelCtx[ID]
-	m.rwmu.RUnlock()
+	m.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("task id %v not found", ID)
 	}

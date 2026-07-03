@@ -89,7 +89,7 @@ func (h TaskHandler) DeleteTaskById(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.TaskService.DeleteTaskById(id)
+	res, err := h.TaskService.DeleteTaskById(r.Context(), id)
 	if err != nil {
 		// TODO:
 		// make headers code and response json
@@ -122,17 +122,15 @@ func (h TaskHandler) Events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 
 	requestUUID := uuid.New()
-	events, err := h.TaskService.GetEvents(r.Context(), requestUUID)
+	events := h.TaskService.GetEvents(r.Context(), requestUUID)
+
+	if events == nil {
+		fmt.Fprintf(w, "Channel is closed, connection terminated, %s\n", requestUUID)
+		return
+	}
 
 	fmt.Fprintf(w, "Connection established,  %v\n", requestUUID)
 	flusher.Flush()
-
-	if err != nil {
-		fmt.Println(err.Error())
-		fmt.Fprintf(w, "%v\n", err)
-		flusher.Flush()
-		return
-	}
 
 	for {
 		select {
