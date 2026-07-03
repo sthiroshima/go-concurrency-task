@@ -36,7 +36,13 @@ func NewClient() *Client {
 
 func (b *Broker) Run(ctx context.Context) {
 	b.wg.Add(1)
+	b.wg.Wait()
+
 	go b.worker(ctx)
+}
+
+func (b *Broker) Close() {
+	close(b.dispatcher)
 }
 
 func (b *Broker) worker(appCtx context.Context) {
@@ -44,9 +50,17 @@ func (b *Broker) worker(appCtx context.Context) {
 
 	for {
 		select {
-		case message := <-b.dispatcher:
+		case message, ok := <-b.dispatcher:
+			if !ok {
+				return
+			}
+
 			b.rwmu.RLock()
 			for _, client := range b.clients {
+				if client.closed {
+					continue
+				}
+
 				select {
 				case client.events <- message:
 				default:
@@ -54,6 +68,8 @@ func (b *Broker) worker(appCtx context.Context) {
 			}
 			b.rwmu.RUnlock()
 		case <-appCtx.Done():
+			b.Close()
+
 			return
 		}
 	}
@@ -85,6 +101,7 @@ func (b *Broker) CloseClient(requestUUID uuid.UUID) {
 
 	c, ok := b.clients[requestUUID]
 	if ok {
+		b.clients[requestUUID].closed = true
 		close(c.events)
 	}
 
