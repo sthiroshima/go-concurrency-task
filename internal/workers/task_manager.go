@@ -14,6 +14,7 @@ import (
 type TaskManager struct {
 	appCtx    context.Context
 	repo      *repository.TaskStateRepository
+	sseBroker *Broker
 	queue     chan TaskCtx
 	result    chan TaskResult
 	attempts  map[uuid.UUID]int
@@ -32,10 +33,11 @@ type TaskResult struct {
 	Result bool
 }
 
-func NewTaskManager(appCtx context.Context, repo *repository.TaskStateRepository) *TaskManager {
+func NewTaskManager(appCtx context.Context, repo *repository.TaskStateRepository, sseBroker *Broker) *TaskManager {
 	return &TaskManager{
 		appCtx:    appCtx,
 		repo:      repo,
+		sseBroker: sseBroker,
 		queue:     make(chan TaskCtx, 100),
 		attempts:  make(map[uuid.UUID]int),
 		result:    make(chan TaskResult, 100),
@@ -59,6 +61,7 @@ func (m *TaskManager) worker(appCtx context.Context) {
 	for {
 		select {
 		case task := <-m.queue:
+			fmt.Printf("from queue %s\n", task.ID)
 			m.executeTask(task.ctx, task.ID)
 		case <-appCtx.Done():
 			return
@@ -68,16 +71,17 @@ func (m *TaskManager) worker(appCtx context.Context) {
 
 func (m *TaskManager) executeTask(ctx context.Context, ID uuid.UUID) {
 	if err := m.repo.ProcessingTask(ID); err != nil {
-		fmt.Printf("mark is processing failed, %v\n", ID)
+		fmt.Println(err.Error())
 		return
 	}
+	m.sseBroker.WriteMessage(fmt.Sprintf("%v is processing", ID))
 
 	var jobResult bool
 	for i := 0; i < 20; i++ {
 		select {
 		case <-ctx.Done():
 			goto write
-		case <-time.After(time.Second * time.Duration(rand.Intn(15))):
+		case <-time.After(time.Second * time.Duration(rand.Intn(2))):
 			if rand.Intn(20) == 2 {
 				jobResult = true
 				goto write
@@ -96,8 +100,7 @@ func (m *TaskManager) resultCollector(ctx context.Context) {
 	for {
 		select {
 		case res := <-m.result:
-			if m.addAttempt(res.ID) {
-				m.AdToQueue(res.ID)
+			if m.retryTask(res.ID) {
 				continue
 			}
 
@@ -115,16 +118,24 @@ func (m *TaskManager) saveResult(ctx context.Context, res TaskResult) {
 			fmt.Println(err.Error())
 			return
 		}
+		m.sseBroker.WriteMessage(fmt.Sprintf("%v is done", res.ID))
 	case false:
 		if err := m.repo.FailedTask(res.ID); err != nil {
 			fmt.Println(err.Error())
 			return
 		}
+		m.sseBroker.WriteMessage(fmt.Sprintf("%v is failed", res.ID))
 	}
 }
 
 func (m *TaskManager) retryTask(ID uuid.UUID) bool {
 	if m.addAttempt(ID) {
+		if err := m.repo.RetryProcessingTask(ID); err != nil {
+			panic(err)
+			return false
+		}
+		m.sseBroker.WriteMessage(fmt.Sprintf("%v is retry", ID))
+
 		m.AdToQueue(ID)
 		return true
 	}

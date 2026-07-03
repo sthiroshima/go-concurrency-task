@@ -21,9 +21,12 @@ func main() {
 	)
 	defer cancel()
 
+	sseBroker := workers.NewBroker()
+
 	repo := repository.NewTaskStateRepository()
-	queue := workers.NewTaskManager(ctx, repo)
-	taskService := service.NewTaskService(repo, queue)
+	queue := workers.NewTaskManager(ctx, repo, sseBroker)
+
+	taskService := service.NewTaskService(repo, queue, sseBroker)
 	handler := handlers.NewTaskHandler(taskService)
 
 	server := http.Server{
@@ -35,8 +38,10 @@ func main() {
 	}
 
 	go queue.Run(ctx)
+	go sseBroker.Run(ctx)
 
 	if err := s.Run(ctx); err != nil {
 		log.Fatal(err)
 	}
+
 }
