@@ -5,11 +5,12 @@ import "fmt"
 type Status string
 
 const (
-	StatusQueued     Status = "queued"
-	StatusProcessing Status = "processing"
-	StatusDone       Status = "done"
-	StatusFailed     Status = "failed"
-	StatusCanceled   Status = "canceled"
+	StatusQueued          Status = "queued"
+	StatusProcessing      Status = "processing"
+	StatusRetryProcessing Status = "retryProcessing"
+	StatusDone            Status = "done"
+	StatusFailed          Status = "failed"
+	StatusCanceled        Status = "canceled"
 )
 
 type TaskState struct {
@@ -51,10 +52,19 @@ func (s *TaskState) MarkFailed() error {
 	return fmt.Errorf("Failed only Processing status, current status is %s", s.Status)
 }
 func (s *TaskState) MarkProcessing() error {
-	if s.Status == StatusQueued {
+	if s.Status == StatusQueued || s.Status == StatusRetryProcessing {
 		s.Status = StatusProcessing
 		return nil
 	}
 
-	return fmt.Errorf("Processing only queued status, current status is %s", s.Status)
+	return fmt.Errorf("Processing only queued and retryprocessing status, current status is %s", s.Status)
+}
+
+func (s *TaskState) MarkRetryProcessing() error {
+	if s.Status == StatusProcessing {
+		s.Status = StatusRetryProcessing
+		return nil
+	}
+
+	return fmt.Errorf("Processing only processing status, current status is %s", s.Status)
 }

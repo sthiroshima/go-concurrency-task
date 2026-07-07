@@ -12,5 +12,6 @@ func NewRouter(taskHandler *handlers.TaskHandler) http.Handler {
 	mux.HandleFunc("GET /tasks/{id}", taskHandler.TaskById)
 	mux.HandleFunc("DELETE /tasks/{id}", taskHandler.DeleteTaskById)
 	mux.HandleFunc("GET /metrics", taskHandler.GetMetrics)
+	mux.HandleFunc("GET /events", taskHandler.Events)
 	return mux
 }
