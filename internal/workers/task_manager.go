@@ -74,7 +74,7 @@ func (m *TaskManager) executeTask(ctx context.Context, ID uuid.UUID) {
 		fmt.Println(err.Error())
 		return
 	}
-	m.sseBroker.WriteMessage(fmt.Sprintf("%v is processing", ID))
+	m.sseBroker.WriteMessage(ctx, fmt.Sprintf("%v is processing", ID))
 
 	var jobResult bool
 	for i := 0; i < 20; i++ {
@@ -100,7 +100,7 @@ func (m *TaskManager) resultCollector(ctx context.Context) {
 	for {
 		select {
 		case res := <-m.result:
-			if m.retryTask(res.ID) {
+			if m.retryTask(ctx, res.ID) {
 				continue
 			}
 
@@ -118,23 +118,23 @@ func (m *TaskManager) saveResult(ctx context.Context, res TaskResult) {
 			fmt.Println(err.Error())
 			return
 		}
-		m.sseBroker.WriteMessage(fmt.Sprintf("%v is done", res.ID))
+		m.sseBroker.WriteMessage(ctx, fmt.Sprintf("%v is done", res.ID))
 	case false:
 		if err := m.repo.FailedTask(res.ID); err != nil {
 			fmt.Println(err.Error())
 			return
 		}
-		m.sseBroker.WriteMessage(fmt.Sprintf("%v is failed", res.ID))
+		m.sseBroker.WriteMessage(ctx, fmt.Sprintf("%v is failed", res.ID))
 	}
 }
 
-func (m *TaskManager) retryTask(ID uuid.UUID) bool {
+func (m *TaskManager) retryTask(ctx context.Context, ID uuid.UUID) bool {
 	if m.addAttempt(ID) {
 		if err := m.repo.RetryProcessingTask(ID); err != nil {
 			panic(err)
 			return false
 		}
-		m.sseBroker.WriteMessage(fmt.Sprintf("%v is retry", ID))
+		m.sseBroker.WriteMessage(ctx, fmt.Sprintf("%v is retry", ID))
 
 		m.AdToQueue(ID)
 		return true
