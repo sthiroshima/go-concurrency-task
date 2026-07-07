@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"go-concurrency-task/internal/dto"
 	"go-concurrency-task/internal/service"
 	"net/http"
@@ -87,7 +89,7 @@ func (h TaskHandler) DeleteTaskById(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.TaskService.DeleteTaskById(id)
+	res, err := h.TaskService.DeleteTaskById(r.Context(), id)
 	if err != nil {
 		// TODO:
 		// make headers code and response json
@@ -108,4 +110,43 @@ func (h TaskHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	return
+}
+
+func (h TaskHandler) Events(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	requestUUID := uuid.New()
+	events := h.TaskService.GetEvents(r.Context(), requestUUID)
+
+	if events == nil {
+		fmt.Fprintf(w, "Channel is closed, connection terminated, %s\n", requestUUID)
+		return
+	}
+
+	fmt.Fprintf(w, "Connection established,  %v\n", requestUUID)
+	flusher.Flush()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			h.TaskService.CloseSSE(context.Background(), requestUUID)
+			return
+		case message, ok := <-events:
+			if !ok {
+				h.TaskService.CloseSSE(context.Background(), requestUUID)
+				fmt.Fprintf(w, "Channel is closed, connection terminated, %s\n", requestUUID)
+				flusher.Flush()
+				return
+			}
+
+			fmt.Fprintf(w, "data: %s\n\n", message)
+			flusher.Flush()
+		}
+	}
 }

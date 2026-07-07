@@ -102,6 +102,18 @@ func (s *TaskStateRepository) ProcessingTask(ID uuid.UUID) error {
 	return taskState.MarkProcessing()
 }
 
+func (s *TaskStateRepository) RetryProcessingTask(ID uuid.UUID) error {
+	s.rwmu.Lock()
+	defer s.rwmu.Unlock()
+
+	taskState, err := s.getById(ID)
+	if err != nil {
+		return err
+	}
+
+	return taskState.MarkRetryProcessing()
+}
+
 func (s *TaskStateRepository) FailedTask(ID uuid.UUID) error {
 	s.rwmu.Lock()
 	defer s.rwmu.Unlock()
